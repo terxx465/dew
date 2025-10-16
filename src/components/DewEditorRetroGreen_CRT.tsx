@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 const BASE_MASTER_GAIN = 0.9;
 const BASE_COMP_THRESHOLD = -6;
 const BASE_COMP_RATIO = 3;
+const INITIAL_REVERB = 0.3;
 
 const MODES: Record<string, ModeSettings> = {
   Normal: {
@@ -73,6 +74,13 @@ type ModeSettings = {
 };
 
 type MacroName = "clarity" | "warmth" | "energy" | "smoothness";
+
+const INITIAL_MACROS: Record<MacroName, number> = {
+  clarity: 0.2,
+  warmth: 0.15,
+  energy: 0.1,
+  smoothness: 0.1
+};
 
 const MODE_ORDER = ["Normal", "Clear", "Echo", "Hype", "Warm", "Night", "Vocal Focus"];
 
@@ -185,16 +193,19 @@ export default function DewEditorRetroGreen_CRT() {
   const [bass, setBass] = useState(0);
   const [treble, setTreble] = useState(0);
   const [pan, setPan] = useState(0);
-  const [reverb, setReverb] = useState(0.3);
+  const [reverb, setReverb] = useState(INITIAL_REVERB);
   const [mixWet, setMixWet] = useState(0.4);
   const [mode, setMode] = useState<string | null>(null);
 
-  const [clarity, setClarity] = useState(0.2);
-  const [warmth, setWarmth] = useState(0.15);
-  const [energy, setEnergy] = useState(0.1);
-  const [smoothness, setSmoothness] = useState(0.1);
+  const [clarity, setClarity] = useState(INITIAL_MACROS.clarity);
+  const [warmth, setWarmth] = useState(INITIAL_MACROS.warmth);
+  const [energy, setEnergy] = useState(INITIAL_MACROS.energy);
+  const [smoothness, setSmoothness] = useState(INITIAL_MACROS.smoothness);
 
   const [gainReduction, setGainReduction] = useState(0);
+
+  const macroMemoryRef = useRef<Record<MacroName, number>>({ ...INITIAL_MACROS });
+  const reverbMemoryRef = useRef(INITIAL_REVERB);
 
   const startedAtRef = useRef(0);
   const offsetAtStartRef = useRef(0);
@@ -271,6 +282,26 @@ export default function DewEditorRetroGreen_CRT() {
       if (compMeterRef.current) cancelAnimationFrame(compMeterRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (clarity > 0.001) macroMemoryRef.current.clarity = clarity;
+  }, [clarity]);
+
+  useEffect(() => {
+    if (warmth > 0.001) macroMemoryRef.current.warmth = warmth;
+  }, [warmth]);
+
+  useEffect(() => {
+    if (energy > 0.001) macroMemoryRef.current.energy = energy;
+  }, [energy]);
+
+  useEffect(() => {
+    if (smoothness > 0.001) macroMemoryRef.current.smoothness = smoothness;
+  }, [smoothness]);
+
+  useEffect(() => {
+    if (reverb > 0.001) reverbMemoryRef.current = reverb;
+  }, [reverb]);
 
   const totalLowShelf = useMemo(() => {
     return computeLowShelfGain(bass, clarity, warmth, energy);
@@ -457,9 +488,65 @@ export default function DewEditorRetroGreen_CRT() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Space") { e.preventDefault(); isPlaying ? handlePause() : handlePlay(); }
-      else if (e.code === "ArrowRight") { e.preventDefault(); const np = Math.min((bufferRef.current?.duration || 0), position + 2); setPosition(np); if (isPlaying) handlePlay(np); }
-      else if (e.code === "ArrowLeft") { e.preventDefault(); const np = Math.max(0, position - 2); setPosition(np); if (isPlaying) handlePlay(np); }
+      else if (e.code === "ArrowRight") {
+        e.preventDefault();
+        if (!bufferRef.current) return;
+        const step = e.shiftKey ? 10 : 2;
+        const np = clamp(position + step, 0, bufferRef.current.duration);
+        setPosition(np);
+        if (isPlaying) handlePlay(np);
+      }
+      else if (e.code === "ArrowLeft") {
+        e.preventDefault();
+        if (!bufferRef.current) return;
+        const step = e.shiftKey ? 10 : 2;
+        const np = clamp(position - step, 0, bufferRef.current.duration);
+        setPosition(np);
+        if (isPlaying) handlePlay(np);
+      }
+      else if (e.code === "BracketRight") {
+        e.preventDefault();
+        setMode(null);
+        setTurntable(false);
+        setPitchSemitones((prev) => clamp(prev + 1, -12, 12));
+      }
+      else if (e.code === "BracketLeft") {
+        e.preventDefault();
+        setMode(null);
+        setTurntable(false);
+        setPitchSemitones((prev) => clamp(prev - 1, -12, 12));
+      }
       else if (e.key.toLowerCase() === "o") { e.preventDefault(); fileInputRef.current?.click(); }
+      else if (e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        setMode(null);
+        if (reverb > 0.001) { reverbMemoryRef.current = reverb; setReverb(0); }
+        else { setReverb(reverbMemoryRef.current || INITIAL_REVERB); }
+      }
+      else if (e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        setMode(null);
+        if (clarity > 0.01) { macroMemoryRef.current.clarity = clarity; setClarity(0); }
+        else { setClarity(macroMemoryRef.current.clarity ?? INITIAL_MACROS.clarity); }
+      }
+      else if (e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        setMode(null);
+        if (warmth > 0.01) { macroMemoryRef.current.warmth = warmth; setWarmth(0); }
+        else { setWarmth(macroMemoryRef.current.warmth ?? INITIAL_MACROS.warmth); }
+      }
+      else if (e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        setMode(null);
+        if (energy > 0.01) { macroMemoryRef.current.energy = energy; setEnergy(0); }
+        else { setEnergy(macroMemoryRef.current.energy ?? INITIAL_MACROS.energy); }
+      }
+      else if (e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setMode(null);
+        if (smoothness > 0.01) { macroMemoryRef.current.smoothness = smoothness; setSmoothness(0); }
+        else { setSmoothness(macroMemoryRef.current.smoothness ?? INITIAL_MACROS.smoothness); }
+      }
       else if (e.key >= "1" && e.key <= "7") {
         const index = Number(e.key) - 1;
         const modeName = MODE_ORDER[index];
@@ -468,7 +555,7 @@ export default function DewEditorRetroGreen_CRT() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isPlaying, position]);
+  }, [isPlaying, position, clarity, warmth, energy, smoothness, reverb]);
 
   async function handleExportWav() {
     if (!bufferRef.current || !audioCtxRef.current) return;
@@ -688,7 +775,8 @@ export default function DewEditorRetroGreen_CRT() {
 
             <footer className="mt-4 text-sm opacity-80 space-y-1">
               <div>Formats: MP3, WAV, OGG — drag & drop or OPEN.</div>
-              <div>SPACE: play/pause · ←/→: seek · O: open · 1-7: modes · EXPORT WAV: render current chain.</div>
+              <div>SPACE: play/pause · ←/→: seek ±2s (Shift = ±10s) · [ / ]: pitch −/+1 ST · O: open · 1-7: modes.</div>
+              <div>R toggles reverb, and C/W/E/S toggle the macro sliders (Clarity/Warmth/Energy/Smoothness).</div>
               <div className="mt-2">For true time-stretch (pitch without tempo change), integrate a phase-vocoder via AudioWorklet.</div>
             </footer>
           </aside>
